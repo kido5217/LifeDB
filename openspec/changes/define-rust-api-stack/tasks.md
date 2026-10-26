@@ -23,12 +23,12 @@
 
 ## 4. Auth vertical
 
-- [ ] 4.1 Implement `src/auth.rs`: argon2id hash/verify with PHC strings and a precomputed dummy hash; verify unit tests: round-trip verifies, wrong password rejects, stored hash parses as an `$argon2id$` PHC string.
-- [ ] 4.2 Implement `src/users/` queries (insert, find-by-username) with compile-checked macros; verify tests: duplicate username surfaces the unique-violation variant, not-found maps to the auth 401 path.
-- [ ] 4.3 Implement register/login handlers and routes with D11 validation policy (validator DTOs); verify integration tests: valid register → success without session cookie, duplicate → 409, weak password → 400 listing failed rules, correct login → 401→200 flow with `HttpOnly`+`SameSite=Lax` cookie, `ENVIRONMENT=prod` adds `Secure`.
-- [ ] 4.4 Wire `tower-sessions` (memory store, D3, TTL from config); verify integration tests: `/api/v1/auth/me` 200 with session, 401 on tampered/expired cookie, logout expires the cookie and the same cookie value 401s afterward, a freshly built router rejects a pre-restart cookie (restart-revocation scenario).
-- [ ] 4.5 Implement the Origin check on mutating requests (spec exemption rules for login/register included); verify tests: foreign `Origin` POST with session cookie → 403, same-origin passes, login/register from foreign origin → 403.
-- [ ] 4.6 Make the unknown-user login path hash-verify against the dummy hash; verify a smoke test with a loose wall-time bound shows unknown-user and wrong-password responses are within one order of magnitude, and both are byte-identical 401 envelopes.
+- [x] 4.1 Implement `src/auth.rs`: argon2id hash/verify with PHC strings and a precomputed dummy hash; verify unit tests: round-trip verifies, wrong password rejects, stored hash parses as an `$argon2id$` PHC string.
+- [x] 4.2 Implement `src/users/` queries (insert, find-by-username) with compile-checked macros; verify tests: duplicate username surfaces the unique-violation variant, not-found maps to the auth 401 path.
+- [x] 4.3 Implement register/login handlers and routes with D11 validation policy (validator DTOs); verify integration tests: valid register → success without session cookie, duplicate → 409, weak password → 400 listing failed rules, correct login → 401→200 flow with `HttpOnly`+`SameSite=Lax` cookie, `ENVIRONMENT=prod` adds `Secure`.
+- [x] 4.4 Wire `tower-sessions` (memory store, D3, TTL from config); verify integration tests: `/api/v1/auth/me` 200 with session, 401 on tampered/expired cookie, logout expires the cookie and the same cookie value 401s afterward, a freshly built router rejects a pre-restart cookie (restart-revocation scenario).
+- [x] 4.5 Implement the Origin check on mutating requests (spec exemption rules for login/register included); verify tests: foreign `Origin` POST with session cookie → 403, same-origin passes, login/register from foreign origin → 403.
+- [x] 4.6 Make the unknown-user login path hash-verify against the dummy hash; verify a smoke test with a loose wall-time bound shows unknown-user and wrong-password responses are within one order of magnitude, and both are byte-identical 401 envelopes.
 
 ## 5. OpenAPI surface and cross-cutting verification
 

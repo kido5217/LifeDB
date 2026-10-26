@@ -41,6 +41,9 @@ pub async fn test_pool() -> PgPool {
             .run(&pool)
             .await
             .expect("migrations on lifedb_test");
+        // Each test process starts from a clean slate; unique usernames
+        // keep tests independent within the process.
+        sqlx::query("TRUNCATE users").execute(&pool).await.expect("truncate users");
         pool
     })
     .await

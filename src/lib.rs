@@ -4,12 +4,14 @@
 //! `openspec/changes/define-rust-api-stack/design.md` (D1-D12).
 
 pub mod app;
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;
 pub mod middleware;
 pub mod state;
 pub mod telemetry;
+pub mod users;
 
 pub use config::{Config, ConfigError};
 pub use error::AppError;

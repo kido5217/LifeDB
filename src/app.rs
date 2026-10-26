@@ -19,7 +19,7 @@ use crate::{db, error::AppError, middleware, state::AppState};
 
 /// The full service router for `state`.
 pub fn build(state: AppState) -> Router {
-    build_with(state, |api| api)
+    build_with(state, |api| api.merge(crate::users::routes()))
 }
 
 /// Router assembly with a hook to seed the `/api/v1` sub-router.
