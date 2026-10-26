@@ -19,16 +19,16 @@ const USER_ID_KEY: &str = "user_id";
     post,
     path = "/api/v1/auth/register",
     tag = "auth",
-    request_body = dto::Credentials,
+    request_body = dto::RegisterCredentials,
     responses(
         (status = 201, description = "account created"),
         (status = 400, description = "validation failed", body = ErrorEnvelope),
-        (status = 409, description = "username taken", body = ErrorEnvelope),
+        (status = 409, description = "username or email taken", body = ErrorEnvelope),
     )
 )]
 pub async fn register(
     State(state): State<AppState>,
-    Json(body): Json<dto::Credentials>,
+    Json(body): Json<dto::RegisterCredentials>,
 ) -> Result<StatusCode, AppError> {
     body.validate().map_err(validation_error)?;
     // Argon2id is deliberately CPU/memory heavy: keep it off the executor.
@@ -37,7 +37,14 @@ pub async fn register(
         .await
         .map_err(internal)?
         .map_err(AppError::Internal)?;
-    queries::insert(&state.pool, Uuid::now_v7(), &body.username, &hash).await?;
+    queries::insert(
+        &state.pool,
+        Uuid::now_v7(),
+        &body.username,
+        &hash,
+        Some(&body.email),
+    )
+    .await?;
     Ok(StatusCode::CREATED)
 }
 
@@ -124,7 +131,7 @@ pub async fn me(
         .ok_or(AppError::Unauthorized)?;
     let row = sqlx::query_as!(
         dto::MeResponse,
-        "SELECT id, username FROM users WHERE id = $1",
+        "SELECT id, username, email FROM users WHERE id = $1",
         id
     )
     .fetch_optional(&state.pool)

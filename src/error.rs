@@ -121,11 +121,7 @@ impl AppError {
                 if let Some(db) = err.as_database_error()
                     && db.code().as_deref() == Some("23505")
                 {
-                    let code = if db.constraint().is_some_and(|c| c.contains("username")) {
-                        "username_taken"
-                    } else {
-                        "unique_violation"
-                    };
+                    let code = conflict_code(db.constraint());
                     return (
                         StatusCode::CONFLICT,
                         json!({ "message": "conflict", "code": code }),
@@ -139,6 +135,16 @@ impl AppError {
                 )
             }
         }
+    }
+}
+
+/// Map a unique-violation constraint name to its client code: the username
+/// constraint says `username_taken`; the email partial index (and anything
+/// else) stays the generic `unique_violation`. All produce 409.
+fn conflict_code(constraint: Option<&str>) -> &'static str {
+    match constraint {
+        Some(c) if c.contains("username") => "username_taken",
+        _ => "unique_violation",
     }
 }
 
@@ -190,6 +196,14 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unique_violations_map_to_409_codes_by_constraint() {
+        assert_eq!(conflict_code(Some("users_username_key")), "username_taken");
+        assert_eq!(conflict_code(Some("uq_users_email")), "unique_violation");
+        assert_eq!(conflict_code(Some("other_key")), "unique_violation");
+        assert_eq!(conflict_code(None), "unique_violation");
+    }
 
     #[test]
     fn client_errors_keep_their_detail() {

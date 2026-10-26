@@ -13,21 +13,24 @@ pub struct User {
     pub username: String,
     pub password_hash: String,
     pub created_at: DateTime<Utc>,
+    pub email: Option<String>,
 }
 
-/// Insert a new account; duplicate usernames surface as `AppError::Database`
-/// (mapped to 409 by the envelope rules).
+/// Insert a new account; a taken username or email surfaces as
+/// `AppError::Database` (both map to 409 by the envelope rules).
 pub async fn insert(
     pool: &PgPool,
     id: Uuid,
     username: &str,
     password_hash: &str,
+    email: Option<&str>,
 ) -> Result<(), AppError> {
     sqlx::query!(
-        "INSERT INTO users (id, username, password_hash) VALUES ($1, $2, $3)",
+        "INSERT INTO users (id, username, password_hash, email) VALUES ($1, $2, $3, $4)",
         id,
         username,
-        password_hash
+        password_hash,
+        email
     )
     .execute(pool)
     .await?;
@@ -38,7 +41,7 @@ pub async fn insert(
 pub async fn find_by_username(pool: &PgPool, username: &str) -> Result<Option<User>, AppError> {
     let user = sqlx::query_as!(
         User,
-        "SELECT id, username, password_hash, created_at FROM users WHERE username = $1",
+        "SELECT id, username, password_hash, created_at, email FROM users WHERE username = $1",
         username
     )
     .fetch_optional(pool)
