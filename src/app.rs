@@ -7,23 +7,43 @@
 
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
 use tower_sessions::cookie::SameSite;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer};
 
 use crate::{db, error::AppError, middleware, state::AppState};
 
-/// The full service router for `state`.
+/// The full service router for `state`: auth surface + OpenAPI document.
 pub fn build(state: AppState) -> Router {
-    build_with(state, |api| api.merge(crate::users::routes()))
+    use utoipa::OpenApi as _;
+    use utoipa_axum::{router::OpenApiRouter, routes};
+
+    let (auth_router, api) = OpenApiRouter::with_openapi(crate::openapi::ApiDoc::openapi())
+        .routes(routes!(crate::users::handlers::register))
+        .routes(routes!(crate::users::handlers::login))
+        .routes(routes!(crate::users::handlers::logout))
+        .routes(routes!(crate::users::handlers::me))
+        .split_for_parts();
+    build_with(
+        state,
+        |api_router| api_router.merge(auth_router),
+        Router::new()
+            .route("/openapi.json", get(doc_handler))
+            .layer(axum::Extension(api)),
+    )
 }
 
-/// Router assembly with a hook to seed the `/api/v1` sub-router.
-pub fn build_with(state: AppState, api: impl FnOnce(Router<AppState>) -> Router<AppState>) -> Router {
+/// Router assembly with hooks to seed the `/api/v1` sub-router (`api`) and
+/// extra root-level routes (`extra`).
+pub fn build_with(
+    state: AppState,
+    api: impl FnOnce(Router<AppState>) -> Router<AppState>,
+    extra: Router<AppState>,
+) -> Router {
     let cfg = Arc::clone(&state.config);
     let sessions = SessionManagerLayer::new(MemoryStore::default())
         .with_name(middleware::SESSION_COOKIE)
@@ -38,7 +58,8 @@ pub fn build_with(state: AppState, api: impl FnOnce(Router<AppState>) -> Router<
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .nest("/api/v1", api)
+        .merge(extra)
+        .merge(api)
         .fallback(fallback)
         // innermost -> outermost
         .layer(axum::middleware::from_fn_with_state(
@@ -53,7 +74,10 @@ pub fn build_with(state: AppState, api: impl FnOnce(Router<AppState>) -> Router<
                 .br(true),
         )
         .layer(middleware::cors(
-            &cfg.allowed_origins.iter().cloned().collect::<std::collections::HashSet<_>>(),
+            &cfg.allowed_origins
+                .iter()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>(),
         ))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -68,6 +92,20 @@ pub fn build_with(state: AppState, api: impl FnOnce(Router<AppState>) -> Router<
         .layer(middleware::request_id_layers().1)
         .layer(middleware::request_id_layers().0)
         .with_state(state)
+}
+
+/// Serves the generated document; content-type set explicitly.
+async fn doc_handler(
+    axum::extract::Extension(api): axum::extract::Extension<utoipa::openapi::OpenApi>,
+) -> Result<Response, AppError> {
+    let json = api.to_json().map_err(|err| {
+        AppError::Internal(anyhow::Error::new(err).context("serializing the OpenAPI document"))
+    })?;
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        json,
+    )
+        .into_response())
 }
 
 /// Liveness: dependency-free (spec `api-service`, health probes).

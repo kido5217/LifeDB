@@ -3,12 +3,11 @@
 //! touching call sites.
 
 use anyhow::Context;
-use tracing::Subscriber;
 use tracing_subscriber::filter::EnvFilter;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::{Layer, SubscriberExt};
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{fmt, Registry};
+use tracing_subscriber::{Registry, fmt};
 
 use crate::config::{Config, LogFormat};
 
@@ -16,7 +15,11 @@ use crate::config::{Config, LogFormat};
 pub fn init(config: &Config) -> anyhow::Result<()> {
     let filter = EnvFilter::try_new(&config.rust_log)
         .context("RUST_LOG did not parse as an EnvFilter (validated at startup)?")?;
-    let layer = fmt_layer(std::io::stdout, matches!(config.log_format, LogFormat::Json), filter);
+    let layer = fmt_layer(
+        std::io::stdout,
+        matches!(config.log_format, LogFormat::Json),
+        filter,
+    );
     tracing_subscriber::registry()
         .with(layer)
         .try_init()
@@ -36,8 +39,9 @@ where
     }
 }
 
-/// Build a subscriber writing to `writer` (JSON when `json` is set) for tests.
-pub(crate) fn subscriber_for<W>(writer: W, json: bool, directive: &str) -> impl Subscriber
+/// Build a subscriber for tests (integration and unit): `writer` captures
+/// the output, JSON when `json` is set, levels per `directive`.
+pub fn subscriber_for<W>(writer: W, json: bool, directive: &str) -> impl tracing::Subscriber
 where
     W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
 {
@@ -84,7 +88,12 @@ mod tests {
         let output = captured(true, || {
             let span = tracing::info_span!("request", path = "/api/v1/auth/me");
             let _guard = span.enter();
-            tracing::info!(method = "GET", status = 200u16, duration_ms = 1.5f64, "request completed");
+            tracing::info!(
+                method = "GET",
+                status = 200u16,
+                duration_ms = 1.5f64,
+                "request completed"
+            );
         });
         let line = output.lines().last().expect("one event line");
         let event: serde_json::Value = line.parse().expect("valid JSON line");
@@ -94,7 +103,9 @@ mod tests {
         assert_eq!(event["fields"]["method"], "GET");
         // The span context rides along so correlated lines can be joined.
         assert!(
-            event["spans"].as_array().is_some_and(|s| s.iter().any(|sp| sp["name"] == "request")),
+            event["spans"]
+                .as_array()
+                .is_some_and(|s| s.iter().any(|sp| sp["name"] == "request")),
             "span context missing: {event}"
         );
         assert!(event["timestamp"].is_number() || event["timestamp"].is_string());

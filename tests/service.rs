@@ -7,13 +7,13 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::Router;
 use axum::body::Body;
 use axum::extract::Request;
-use axum::http::header::{self, HeaderName, HeaderValue};
 use axum::http::StatusCode;
+use axum::http::header::{self, HeaderName, HeaderValue};
 use axum::response::IntoResponse;
 use axum::routing::post;
-use axum::Router;
 use http_body_util::BodyExt;
 use lifedb::app::build_with;
 use lifedb::config::{Config, Environment, LogFormat};
@@ -57,7 +57,14 @@ fn app() -> Router {
         .connect_lazy(&common::test_database_url())
         .expect("lazy test pool");
     let state = AppState::new(pool, test_config(1024, Duration::from_secs(30)));
-    build_with(state, |api| api.route("/echo", post(echo)).route("/slow", post(slow)))
+    build_with(
+        state,
+        |api| {
+            api.route("/api/v1/echo", post(echo))
+                .route("/api/v1/slow", post(slow))
+        },
+        Router::new(),
+    )
 }
 
 async fn response_json_and_status(res: axum::response::Response) -> (StatusCode, Value) {
@@ -70,7 +77,12 @@ async fn response_json_and_status(res: axum::response::Response) -> (StatusCode,
 #[tokio::test]
 async fn success_response_carries_generated_request_id() {
     let res = app()
-        .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
@@ -101,7 +113,12 @@ async fn client_request_id_is_respected_and_echoed() {
 #[tokio::test]
 async fn envelope_request_id_matches_response_header() {
     let res = app()
-        .oneshot(Request::builder().uri("/api/v1/nope").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/nope")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     let header_rid = res
@@ -144,7 +161,11 @@ async fn slow_handler_times_out_with_envelope() {
             .expect("lazy"),
         test_config(1024 * 1024, Duration::from_millis(50)),
     );
-    let api_app = build_with(state, |api| api.route("/slow", post(slow)));
+    let api_app = build_with(
+        state,
+        |api| api.route("/api/v1/slow", post(slow)),
+        Router::new(),
+    );
     let res = api_app
         .oneshot(
             Request::builder()
@@ -163,6 +184,25 @@ async fn slow_handler_times_out_with_envelope() {
 }
 
 #[tokio::test]
+async fn malformed_json_body_gets_envelope() {
+    let res = app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/echo")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from("{not json"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let (status, body) = response_json_and_status(res).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["message"], "request validation failed");
+    assert!(body["request_id"].is_string());
+}
+
+#[tokio::test]
 async fn foreign_origin_preflight_gets_no_cors_allow() {
     let req = Request::builder()
         .method("OPTIONS")
@@ -175,7 +215,7 @@ async fn foreign_origin_preflight_gets_no_cors_allow() {
     assert!(
         !res.headers()
             .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-            .is_some_and(|v| v == &HeaderValue::from_static("https://evil.example")),
+            .is_some_and(|v| v == HeaderValue::from_static("https://evil.example")),
         "foreign origin must not be reflected"
     );
 }
@@ -207,9 +247,14 @@ async fn readiness_503_when_database_endpoint_is_dead() {
         .connect_lazy("postgres://postgres@localhost:5999/lifedb_nowhere")
         .expect("lazy pool");
     let state = AppState::new(dead, test_config(1024 * 1024, Duration::from_secs(30)));
-    let api_app = build_with(state.clone(), |api| api);
+    let api_app = build_with(state.clone(), |api| api, Router::new());
     let res = api_app
-        .oneshot(Request::builder().uri("/readyz").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/readyz")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     let (status, body) = response_json_and_status(res).await;
@@ -218,8 +263,13 @@ async fn readiness_503_when_database_endpoint_is_dead() {
     assert!(body["request_id"].is_string());
 
     // Liveness keeps answering while readiness is down (spec scenario).
-    let res = build_with(state, |api| api)
-        .oneshot(Request::builder().uri("/healthz").body(Body::empty()).unwrap())
+    let res = build_with(state, |api| api, Router::new())
+        .oneshot(
+            Request::builder()
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);

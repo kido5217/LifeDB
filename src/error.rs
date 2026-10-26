@@ -5,15 +5,28 @@
 //! `middleware.rs`) injects the request id, serializes the body, and logs
 //! the cause for 5xx so internal detail never crosses the wire.
 
+use axum::Json as AxumJson;
+use axum::body::Body;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRequest, Request};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::body::Body;
-use axum::Json as AxumJson;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use thiserror::Error;
+
+/// The single JSON error body shape served for every generated error
+/// (documented in OpenAPI; the runtime body is built by the envelope
+/// middleware).
+#[derive(Debug, utoipa::ToSchema)]
+pub struct ErrorEnvelope {
+    /// Client-safe summary of the failure.
+    pub message: String,
+    /// Correlation id, identical to the `x-request-id` response header.
+    pub request_id: String,
+    /// Present on 400: one entry per failed validation rule.
+    pub details: Option<Vec<String>>,
+}
 
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -57,16 +70,36 @@ impl AppError {
                 json!({ "message": "request validation failed", "details": fields }),
                 None,
             ),
-            Self::NotFound => (StatusCode::NOT_FOUND, json!({ "message": "resource not found" }), None),
-            Self::Conflict(code) => (StatusCode::CONFLICT, json!({ "message": "conflict", "code": code }), None),
+            Self::NotFound => (
+                StatusCode::NOT_FOUND,
+                json!({ "message": "resource not found" }),
+                None,
+            ),
+            Self::Conflict(code) => (
+                StatusCode::CONFLICT,
+                json!({ "message": "conflict", "code": code }),
+                None,
+            ),
             Self::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 json!({ "message": "authentication required" }),
                 None,
             ),
-            Self::ForbiddenOrigin => (StatusCode::FORBIDDEN, json!({ "message": "origin not allowed" }), None),
-            Self::PayloadTooLarge => (StatusCode::PAYLOAD_TOO_LARGE, json!({ "message": "payload too large" }), None),
-            Self::Timeout => (StatusCode::GATEWAY_TIMEOUT, json!({ "message": "request timed out" }), None),
+            Self::ForbiddenOrigin => (
+                StatusCode::FORBIDDEN,
+                json!({ "message": "origin not allowed" }),
+                None,
+            ),
+            Self::PayloadTooLarge => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                json!({ "message": "payload too large" }),
+                None,
+            ),
+            Self::Timeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                json!({ "message": "request timed out" }),
+                None,
+            ),
             Self::Unavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 json!({ "message": "service unavailable" }),
@@ -79,7 +112,11 @@ impl AppError {
             ),
             Self::Database(err) => {
                 if let sqlx::Error::RowNotFound = err {
-                    return (StatusCode::NOT_FOUND, json!({ "message": "resource not found" }), None);
+                    return (
+                        StatusCode::NOT_FOUND,
+                        json!({ "message": "resource not found" }),
+                        None,
+                    );
                 }
                 if let Some(db) = err.as_database_error()
                     && db.code().as_deref() == Some("23505")
@@ -89,7 +126,11 @@ impl AppError {
                     } else {
                         "unique_violation"
                     };
-                    return (StatusCode::CONFLICT, json!({ "message": "conflict", "code": code }), None);
+                    return (
+                        StatusCode::CONFLICT,
+                        json!({ "message": "conflict", "code": code }),
+                        None,
+                    );
                 }
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -105,8 +146,12 @@ impl From<JsonRejection> for AppError {
     fn from(rejection: JsonRejection) -> Self {
         match &rejection {
             JsonRejection::BytesRejection(_) => Self::PayloadTooLarge,
-            JsonRejection::JsonSyntaxError(_) => Self::Validation(vec!["body must be well-formed JSON".into()]),
-            JsonRejection::JsonDataError(_) => Self::Validation(vec!["body does not match the expected schema".into()]),
+            JsonRejection::JsonSyntaxError(_) => {
+                Self::Validation(vec!["body must be well-formed JSON".into()])
+            }
+            JsonRejection::JsonDataError(_) => {
+                Self::Validation(vec!["body does not match the expected schema".into()])
+            }
             JsonRejection::MissingJsonContentType(_) => {
                 Self::Validation(vec!["content-type must be application/json".into()])
             }
@@ -135,7 +180,10 @@ where
     type Rejection = AppError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        AxumJson::<T>::from_request(req, state).await.map(|j| Json(j.0)).map_err(Into::into)
+        AxumJson::<T>::from_request(req, state)
+            .await
+            .map(|j| Json(j.0))
+            .map_err(Into::into)
     }
 }
 

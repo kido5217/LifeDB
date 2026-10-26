@@ -1,4 +1,7 @@
 //! Shared integration-test setup: the `lifedb_test` database on the dev cluster.
+//!
+//! This module is compiled into every test binary; each uses a subset.
+#![allow(dead_code)]
 
 use sqlx::postgres::PgPool;
 use tokio::sync::OnceCell;
@@ -43,7 +46,10 @@ pub async fn test_pool() -> PgPool {
             .expect("migrations on lifedb_test");
         // Each test process starts from a clean slate; unique usernames
         // keep tests independent within the process.
-        sqlx::query("TRUNCATE users").execute(&pool).await.expect("truncate users");
+        sqlx::query("TRUNCATE users")
+            .execute(&pool)
+            .await
+            .expect("truncate users");
         pool
     })
     .await

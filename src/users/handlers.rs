@@ -3,30 +3,33 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
-use axum::Router;
 use tower_sessions::Session;
 use uuid::Uuid;
 use validator::Validate;
 
 use crate::auth;
-use crate::error::{AppError, Json};
+use crate::error::{AppError, ErrorEnvelope, Json};
 use crate::state::AppState;
 use crate::users::{dto, queries};
 
 const USER_ID_KEY: &str = "user_id";
 
-/// The `/auth/*` sub-router, nested under `/api/v1` (design D12).
-pub fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/auth/register", post(register))
-        .route("/auth/login", post(login))
-        .route("/auth/logout", post(logout))
-        .route("/auth/me", get(me))
-}
-
 /// Create an account; does not sign the client in (no session written).
-async fn register(State(state): State<AppState>, Json(body): Json<dto::Credentials>) -> Result<StatusCode, AppError> {
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/register",
+    tag = "auth",
+    request_body = dto::Credentials,
+    responses(
+        (status = 201, description = "account created"),
+        (status = 400, description = "validation failed", body = ErrorEnvelope),
+        (status = 409, description = "username taken", body = ErrorEnvelope),
+    )
+)]
+pub async fn register(
+    State(state): State<AppState>,
+    Json(body): Json<dto::Credentials>,
+) -> Result<StatusCode, AppError> {
     body.validate().map_err(validation_error)?;
     // Argon2id is deliberately CPU/memory heavy: keep it off the executor.
     let password = body.password.clone();
@@ -40,7 +43,23 @@ async fn register(State(state): State<AppState>, Json(body): Json<dto::Credentia
 
 /// Verify credentials, then create + persist a session. Unknown users get
 /// the same work and the same 401 as wrong passwords.
-async fn login(State(state): State<AppState>, session: Session, Json(body): Json<dto::Credentials>) -> Result<Response, AppError> {
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/login",
+    tag = "auth",
+    request_body = dto::Credentials,
+    responses(
+        (status = 204, description = "session established (Set-Cookie)"),
+        (status = 400, description = "validation failed", body = ErrorEnvelope),
+        (status = 401, description = "bad credentials", body = ErrorEnvelope),
+        (status = 403, description = "origin not allowed", body = ErrorEnvelope),
+    )
+)]
+pub async fn login(
+    State(state): State<AppState>,
+    session: Session,
+    Json(body): Json<dto::Credentials>,
+) -> Result<Response, AppError> {
     body.validate().map_err(validation_error)?;
     let user = queries::find_by_username(&state.pool, &body.username).await?;
     let password = body.password.clone();
@@ -48,9 +67,10 @@ async fn login(State(state): State<AppState>, session: Session, Json(body): Json
         Some(user) => {
             // Same blocking-pool path for known and unknown users, so the
             // enumeration defense holds on the timing channel too.
-            let verified = tokio::task::spawn_blocking(move || auth::verify(&password, &user.password_hash))
-                .await
-                .map_err(internal)?;
+            let verified =
+                tokio::task::spawn_blocking(move || auth::verify(&password, &user.password_hash))
+                    .await
+                    .map_err(internal)?;
             verified.then_some(user.id)
         }
         None => {
@@ -68,36 +88,62 @@ async fn login(State(state): State<AppState>, session: Session, Json(body): Json
 }
 
 /// Destroy the session and expire the cookie.
-async fn logout(session: Session) -> Result<StatusCode, AppError> {
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/logout",
+    tag = "auth",
+    responses(
+        (status = 204, description = "session destroyed (cookie expired)"),
+        (status = 401, description = "no session", body = ErrorEnvelope),
+        (status = 403, description = "origin not allowed", body = ErrorEnvelope),
+    )
+)]
+pub async fn logout(session: Session) -> Result<StatusCode, AppError> {
     session.flush().await.map_err(internal)?; // clears the record + expires the cookie
     Ok(StatusCode::NO_CONTENT)
 }
 
 /// Identity comes from the session record only (never from client fields).
-async fn me(State(state): State<AppState>, session: Session) -> Result<impl IntoResponse, AppError> {
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/me",
+    tag = "auth",
+    responses(
+        (status = 200, description = "current account", body = dto::MeResponse),
+        (status = 401, description = "missing or stale session", body = ErrorEnvelope),
+    )
+)]
+pub async fn me(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<impl IntoResponse, AppError> {
     let id: Uuid = session
         .get::<Uuid>(USER_ID_KEY)
         .await
         .map_err(internal)?
         .ok_or(AppError::Unauthorized)?;
-    let row = sqlx::query_as!(dto::MeResponse, "SELECT id, username FROM users WHERE id = $1", id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
+    let row = sqlx::query_as!(
+        dto::MeResponse,
+        "SELECT id, username FROM users WHERE id = $1",
+        id
+    )
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
     Ok(axum::Json(row))
 }
 
 fn validation_error(err: validator::ValidationErrors) -> AppError {
     let details = err
         .field_errors()
-        .into_iter()
-        .flat_map(|(_field, errors)| {
+        .into_values()
+        .flat_map(|errors| {
             errors
                 .iter()
                 .map(|e| {
                     e.message
                         .clone()
-                        .unwrap_or_else(|| std::borrow::Cow::Borrowed("invalid value"))
+                        .unwrap_or(std::borrow::Cow::Borrowed("invalid value"))
                         .to_string()
                 })
                 .collect::<Vec<_>>()

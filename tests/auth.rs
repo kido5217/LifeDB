@@ -6,11 +6,11 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::Router;
 use axum::body::Body;
 use axum::extract::Request;
 use axum::http::header::{self, HeaderName};
 use axum::http::{HeaderMap, StatusCode};
-use axum::Router;
 use http_body_util::BodyExt;
 use lifedb::app::build;
 use lifedb::config::{Config, Environment, LogFormat};
@@ -39,7 +39,10 @@ fn cfg(environment: Environment, session_ttl: Duration, cookie_secure: bool) -> 
 
 async fn app() -> Router {
     let pool = common::test_pool().await;
-    build(AppState::new(pool, cfg(Environment::Dev, Duration::from_secs(60), false)))
+    build(AppState::new(
+        pool,
+        cfg(Environment::Dev, Duration::from_secs(60), false),
+    ))
 }
 
 fn post_json(uri: &str, body: &Value) -> Request<Body> {
@@ -54,7 +57,9 @@ fn post_json(uri: &str, body: &Value) -> Request<Body> {
 
 fn with_cookie(req: Request<Body>, cookie: &str) -> Request<Body> {
     let (mut parts, body) = req.into_parts();
-    parts.headers.insert(header::COOKIE, cookie.parse().unwrap());
+    parts
+        .headers
+        .insert(header::COOKIE, cookie.parse().unwrap());
     Request::from_parts(parts, body)
 }
 
@@ -65,24 +70,27 @@ struct Reply {
     raw: String,
 }
 
-fn set_cookie(res: &axum::response::Response) -> Option<String> {
-    res.headers()
-        .get(header::SET_COOKIE)
-        .map(|v| v.to_str().unwrap().to_string())
-}
-
 async fn into_reply(res: axum::response::Response) -> Reply {
     let status = res.status();
     let headers = res.headers().clone();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     let raw = String::from_utf8_lossy(&bytes).to_string();
     let body = serde_json::from_str(&raw).ok();
-    Reply { status, headers, body, raw }
+    Reply {
+        status,
+        headers,
+        body,
+        raw,
+    }
 }
 
 /// Extract the opaque session value from a Set-Cookie header.
 fn cookie_from(set_cookie: &str) -> String {
-    set_cookie.split(';').next().expect("cookie pair").to_string()
+    set_cookie
+        .split(';')
+        .next()
+        .expect("cookie pair")
+        .to_string()
 }
 
 async fn register(app: Router, username: &str, password: &str) -> Reply {
@@ -114,7 +122,10 @@ async fn register_creates_account_without_a_session() {
     let user = common::unique_username("reg");
     let reply = register(app().await, &user, "twelve chars pass!").await;
     assert_eq!(reply.status, StatusCode::CREATED);
-    assert!(reply.headers.get(header::SET_COOKIE).is_none(), "register must not set a session cookie");
+    assert!(
+        reply.headers.get(header::SET_COOKIE).is_none(),
+        "register must not set a session cookie"
+    );
 
     let dupe = register(app().await, &user, "twelve chars pass!").await;
     assert_eq!(dupe.status, StatusCode::CONFLICT);
@@ -140,14 +151,26 @@ async fn login_flow_sets_hardened_cookie_and_serves_me() {
     let cookie = set_cookie_of(&reply);
     assert!(cookie.contains("lifedb_session="), "{cookie}");
     assert!(cookie.to_ascii_lowercase().contains("httponly"), "{cookie}");
-    assert!(cookie.to_ascii_lowercase().contains("samesite=lax"), "{cookie}");
-    assert!(!cookie.to_ascii_lowercase().contains("secure"), "dev must not set Secure: {cookie}");
+    assert!(
+        cookie.to_ascii_lowercase().contains("samesite=lax"),
+        "{cookie}"
+    );
+    assert!(
+        !cookie.to_ascii_lowercase().contains("secure"),
+        "dev must not set Secure: {cookie}"
+    );
     let cookie = cookie_from(&cookie);
 
     let me = into_reply(
         router
             .clone()
-            .oneshot(with_cookie(Request::builder().uri("/api/v1/auth/me").body(Body::empty()).unwrap(), &cookie))
+            .oneshot(with_cookie(
+                Request::builder()
+                    .uri("/api/v1/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+                &cookie,
+            ))
             .await
             .unwrap(),
     )
@@ -160,7 +183,13 @@ async fn login_flow_sets_hardened_cookie_and_serves_me() {
     let me = into_reply(
         router
             .clone()
-            .oneshot(with_cookie(Request::builder().uri("/api/v1/auth/me").body(Body::empty()).unwrap(), &tampered))
+            .oneshot(with_cookie(
+                Request::builder()
+                    .uri("/api/v1/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+                &tampered,
+            ))
             .await
             .unwrap(),
     )
@@ -176,7 +205,8 @@ async fn login_flow_sets_hardened_cookie_and_serves_me() {
                     .method("POST")
                     .uri("/api/v1/auth/logout")
                     .header(header::ORIGIN, "http://localhost:5173")
-                    .body(Body::empty()).unwrap(),
+                    .body(Body::empty())
+                    .unwrap(),
                 &cookie,
             ))
             .await
@@ -184,10 +214,19 @@ async fn login_flow_sets_hardened_cookie_and_serves_me() {
     )
     .await;
     assert_eq!(out.status, StatusCode::NO_CONTENT);
-    assert!(out.headers.contains_key(header::SET_COOKIE), "logout must expire the cookie");
+    assert!(
+        out.headers.contains_key(header::SET_COOKIE),
+        "logout must expire the cookie"
+    );
     let me = into_reply(
         router
-            .oneshot(with_cookie(Request::builder().uri("/api/v1/auth/me").body(Body::empty()).unwrap(), &cookie))
+            .oneshot(with_cookie(
+                Request::builder()
+                    .uri("/api/v1/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+                &cookie,
+            ))
             .await
             .unwrap(),
     )
@@ -214,16 +253,33 @@ async fn prod_config_marks_the_cookie_secure() {
     ));
     let user = common::unique_username("sec");
     let reg = register(router.clone(), &user, "twelve chars pass!").await;
-    assert_eq!(reg.status, StatusCode::CREATED, "prod register: {:?}", reg.body);
+    assert_eq!(
+        reg.status,
+        StatusCode::CREATED,
+        "prod register: {:?}",
+        reg.body
+    );
     let reply = login(router, &user, "twelve chars pass!").await;
-    assert_eq!(reply.status, StatusCode::NO_CONTENT, "prod login: {:?}", reply.body);
-    assert!(set_cookie_of(&reply).to_ascii_lowercase().contains("secure"));
+    assert_eq!(
+        reply.status,
+        StatusCode::NO_CONTENT,
+        "prod login: {:?}",
+        reply.body
+    );
+    assert!(
+        set_cookie_of(&reply)
+            .to_ascii_lowercase()
+            .contains("secure")
+    );
 }
 
 #[tokio::test]
 async fn expired_session_is_unauthorized() {
     let pool = common::test_pool().await;
-    let router = build(AppState::new(pool, cfg(Environment::Dev, Duration::from_secs(1), false)));
+    let router = build(AppState::new(
+        pool,
+        cfg(Environment::Dev, Duration::from_secs(1), false),
+    ));
     let user = common::unique_username("ttl");
     register(router.clone(), &user, "twelve chars pass!").await;
     let reply = login(router.clone(), &user, "twelve chars pass!").await;
@@ -231,7 +287,13 @@ async fn expired_session_is_unauthorized() {
     tokio::time::sleep(Duration::from_millis(1200)).await;
     let me = into_reply(
         router
-            .oneshot(with_cookie(Request::builder().uri("/api/v1/auth/me").body(Body::empty()).unwrap(), &cookie))
+            .oneshot(with_cookie(
+                Request::builder()
+                    .uri("/api/v1/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+                &cookie,
+            ))
             .await
             .unwrap(),
     )
@@ -250,7 +312,13 @@ async fn restart_revokes_sessions() {
     let me = into_reply(
         app()
             .await
-            .oneshot(with_cookie(Request::builder().uri("/api/v1/auth/me").body(Body::empty()).unwrap(), &cookie))
+            .oneshot(with_cookie(
+                Request::builder()
+                    .uri("/api/v1/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+                &cookie,
+            ))
             .await
             .unwrap(),
     )
@@ -270,7 +338,9 @@ async fn unknown_user_and_wrong_password_are_indistinguishable() {
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ORIGIN, "http://localhost:5173")
             .header(rid(), rid_value)
-            .body(Body::from(json!({"username": username, "password": "wrong password here"}).to_string()))
+            .body(Body::from(
+                json!({"username": username, "password": "wrong password here"}).to_string(),
+            ))
             .unwrap();
         let start = std::time::Instant::now();
         let reply = into_reply(app.oneshot(req).await.unwrap()).await;
@@ -282,10 +352,17 @@ async fn unknown_user_and_wrong_password_are_indistinguishable() {
 
     assert_eq!(wrong.status, StatusCode::UNAUTHORIZED);
     assert_eq!(unknown.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(wrong.raw, unknown.raw, "401 envelopes must be byte-identical");
+    assert_eq!(
+        wrong.raw, unknown.raw,
+        "401 envelopes must be byte-identical"
+    );
 
     // Loose smoke bound: within one order of magnitude of each other.
-    let (slow, fast) = if wrong_time > unknown_time { (wrong_time, unknown_time) } else { (unknown_time, wrong_time) };
+    let (slow, fast) = if wrong_time > unknown_time {
+        (wrong_time, unknown_time)
+    } else {
+        (unknown_time, wrong_time)
+    };
     assert!(
         slow < fast.mul_f32(10.0) || fast < Duration::from_millis(5),
         "timing split: wrong={wrong_time:?} unknown={unknown_time:?}"
@@ -307,7 +384,14 @@ async fn foreign_origin_is_rejected_on_mutating_requests() {
         .header(header::ORIGIN, "https://evil.example")
         .body(Body::empty())
         .unwrap();
-    let out = into_reply(router.clone().oneshot(with_cookie(req, &cookie)).await.unwrap()).await;
+    let out = into_reply(
+        router
+            .clone()
+            .oneshot(with_cookie(req, &cookie))
+            .await
+            .unwrap(),
+    )
+    .await;
     assert_eq!(out.status, StatusCode::FORBIDDEN);
     assert_eq!(out.body.as_ref().unwrap()["message"], "origin not allowed");
 
@@ -317,7 +401,9 @@ async fn foreign_origin_is_rejected_on_mutating_requests() {
         .uri("/api/v1/auth/login")
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ORIGIN, "https://evil.example")
-        .body(Body::from(json!({"username": user, "password": "twelve chars pass!"}).to_string()))
+        .body(Body::from(
+            json!({"username": user, "password": "twelve chars pass!"}).to_string(),
+        ))
         .unwrap();
     let reply = into_reply(router.clone().oneshot(req).await.unwrap()).await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
@@ -325,12 +411,24 @@ async fn foreign_origin_is_rejected_on_mutating_requests() {
     // Same-origin GET passes (session is still alive after the 403s above).
     let me = into_reply(
         router
-            .oneshot(with_cookie(Request::builder().uri("/api/v1/auth/me").body(Body::empty()).unwrap(), &cookie))
+            .oneshot(with_cookie(
+                Request::builder()
+                    .uri("/api/v1/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+                &cookie,
+            ))
             .await
             .unwrap(),
     )
     .await;
-    assert_eq!(me.status, StatusCode::OK, "me body: {:?} raw: {}", me.body, me.raw);
+    assert_eq!(
+        me.status,
+        StatusCode::OK,
+        "me body: {:?} raw: {}",
+        me.body,
+        me.raw
+    );
 }
 
 #[tokio::test]

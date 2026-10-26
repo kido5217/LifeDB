@@ -32,9 +32,9 @@
 
 ## 5. OpenAPI surface and cross-cutting verification
 
-- [ ] 5.1 Implement `src/openapi.rs` (utoipa + utoipa-axum registration of all routes/DTOs) and serve `/openapi.json`; verify the document is valid JSON with every registered `/api/v1` path and its request/response schemas present.
-- [ ] 5.2 Trace every requirement scenario in both spec deltas to at least one test; verify by listing scenario → test-name pairs in the PR body, closing the loop or adding the missing test.
-- [ ] 5.3 Final gate: verify `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` all pass in the dev shell; fix anything this change introduced and report pre-existing issues separately.
+- [x] 5.1 Implement `src/openapi.rs` (utoipa + utoipa-axum registration of all routes/DTOs) and serve `/openapi.json`; verify the document is valid JSON with every registered `/api/v1` path and its request/response schemas present.
+- [x] 5.2 Trace every requirement scenario in both spec deltas to at least one test; verify by listing scenario → test-name pairs in the PR body, closing the loop or adding the missing test.
+- [x] 5.3 Final gate: verify `cargo test`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --check` all pass in the dev shell; fix anything this change introduced and report pre-existing issues separately.
 
 ## Workflow follow-up
 

@@ -17,10 +17,20 @@ pub struct User {
 
 /// Insert a new account; duplicate usernames surface as `AppError::Database`
 /// (mapped to 409 by the envelope rules).
-pub async fn insert(pool: &PgPool, id: Uuid, username: &str, password_hash: &str) -> Result<(), AppError> {
-    sqlx::query!("INSERT INTO users (id, username, password_hash) VALUES ($1, $2, $3)", id, username, password_hash)
-        .execute(pool)
-        .await?;
+pub async fn insert(
+    pool: &PgPool,
+    id: Uuid,
+    username: &str,
+    password_hash: &str,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        "INSERT INTO users (id, username, password_hash) VALUES ($1, $2, $3)",
+        id,
+        username,
+        password_hash
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

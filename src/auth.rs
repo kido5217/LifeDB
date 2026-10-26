@@ -3,9 +3,9 @@
 
 use std::sync::OnceLock;
 
+use argon2::Argon2;
 use argon2::password_hash::phc::PasswordHash;
 use argon2::password_hash::{PasswordHasher, PasswordVerifier};
-use argon2::Argon2;
 
 /// Hash `password` with a fresh random salt; returns a PHC `$argon2id$...` string.
 pub fn hash(password: &str) -> anyhow::Result<String> {
@@ -56,9 +56,26 @@ mod tests {
         assert_eq!(parsed.version.map(|v| v.to_string()).as_deref(), Some("19"));
         let params = parsed.params.as_str();
         for expected in ["m=", "t=", "p="] {
-            assert!(params.contains(expected), "params {params:?} lack {expected}");
+            assert!(
+                params.contains(expected),
+                "params {params:?} lack {expected}"
+            );
         }
-        assert!(parsed.salt.is_some() && parsed.hash.is_some(), "salt and hash present");
+        assert!(
+            parsed.salt.is_some() && parsed.hash.is_some(),
+            "salt and hash present"
+        );
+    }
+
+    #[test]
+    fn verification_uses_the_embedded_salt() {
+        // Same password, fresh random salt each time: distinct strings,
+        // both verify -- parameters and salt ride on the stored string.
+        let a = hash("same passphrase here").unwrap();
+        let b = hash("same passphrase here").unwrap();
+        assert_ne!(a, b);
+        assert!(verify("same passphrase here", &a));
+        assert!(verify("same passphrase here", &b));
     }
 
     #[test]

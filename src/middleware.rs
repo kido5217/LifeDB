@@ -14,14 +14,16 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use axum::extract::{Request, State};
-use axum::http::header::{self, COOKIE, ORIGIN};
 use axum::http::HeaderValue;
 use axum::http::Method;
+use axum::http::header::{self, COOKIE, ORIGIN};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 use tower_http::cors::CorsLayer;
-use tower_http::request_id::{MakeRequestId, PropagateRequestIdLayer, RequestId, SetRequestIdLayer};
+use tower_http::request_id::{
+    MakeRequestId, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
+};
 use tower_http::trace::MakeSpan;
 use tracing::{Span, error, info, info_span, warn};
 use uuid::Uuid;
@@ -47,7 +49,8 @@ impl MakeRequestId for RidMaker {
             return None;
         }
         Some(RequestId::new(
-            HeaderValue::from_str(&Uuid::now_v7().to_string()).expect("uuid is a valid header value"),
+            HeaderValue::from_str(&Uuid::now_v7().to_string())
+                .expect("uuid is a valid header value"),
         ))
     }
 }
@@ -77,11 +80,20 @@ impl<S> MakeSpan<S> for RequestSpan {
 pub fn cors(origins: &HashSet<String>) -> CorsLayer {
     let list: Vec<HeaderValue> = origins
         .iter()
-        .map(|o| o.parse().expect("configured origins are valid header values"))
+        .map(|o| {
+            o.parse()
+                .expect("configured origins are valid header values")
+        })
         .collect();
     CorsLayer::new()
         .allow_origin(list)
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
         .allow_headers([header::CONTENT_TYPE])
         .allow_credentials(true)
         .max_age(Duration::from_secs(3600))
@@ -126,8 +138,12 @@ pub async fn envelope(req: Request, next: Next) -> Response {
             HeaderValue::from_static("application/json"),
         );
         match meta.as_ref().and_then(|m| m.cause.clone()) {
-            Some(cause) => error!(target: "http", rid = %rid, method = %method, path = %path, status = status.as_u16(), %cause, elapsed_ms, "request failed"),
-            None => warn!(target: "http", rid = %rid, method = %method, path = %path, status = status.as_u16(), elapsed_ms, "request failed"),
+            Some(cause) => {
+                error!(target: "http", rid = %rid, method = %method, path = %path, status = status.as_u16(), %cause, elapsed_ms, "request failed")
+            }
+            None => {
+                warn!(target: "http", rid = %rid, method = %method, path = %path, status = status.as_u16(), elapsed_ms, "request failed")
+            }
         }
         Response::from_parts(parts, axum::body::Body::from(value.to_string()))
     } else {
@@ -138,7 +154,11 @@ pub async fn envelope(req: Request, next: Next) -> Response {
 
 /// Session-changing or origin-bearing mutating requests must match the
 /// configured allow-list (spec `user-auth`, origin check requirement).
-pub async fn origin_guard(State(state): State<AppState>, req: Request, next: Next) -> Result<Response, AppError> {
+pub async fn origin_guard(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, AppError> {
     let mutating = matches!(
         *req.method(),
         Method::POST | Method::PUT | Method::PATCH | Method::DELETE
@@ -157,9 +177,7 @@ pub async fn origin_guard(State(state): State<AppState>, req: Request, next: Nex
                 raw.split(';')
                     .any(|c| c.trim().starts_with(&format!("{SESSION_COOKIE}=")))
             });
-        let allowed = origin
-            .as_deref()
-            .is_some_and(|o| state.origins.contains(o));
+        let allowed = origin.as_deref().is_some_and(|o| state.origins.contains(o));
         if (has_session_cookie || origin.is_some()) && !allowed {
             return Err(AppError::ForbiddenOrigin);
         }
