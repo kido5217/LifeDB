@@ -9,10 +9,10 @@
 
 ## 2. Persistence and configuration base
 
-- [ ] 2.1 Write `migrations/0001_users.sql` for the design D11 `users` table; verify `just migrate-run` applies it on the dev cluster and a fresh test cluster.
-- [ ] 2.2 Implement `src/config.rs` (`Config::from_env`, all D10 variables, collecting every missing/invalid entry into one error); verify unit tests cover: missing `DATABASE_URL` names it, multiple bad vars all reported together.
-- [ ] 2.3 Implement `src/db.rs`: pool from config, readiness check helper, and a test helper that creates+migrates `lifedb_test` on the dev cluster; verify an integration test connects to `lifedb_test` and the readiness helper returns ok.
-- [ ] 2.4 Implement `src/telemetry.rs`: `EnvFilter` + fmt subscriber, pretty vs JSON by config, stdout only; verify a test with JSON format parses a synthetic span's log output and finds method/status/duration fields.
+- [x] 2.1 Write `migrations/0001_users.sql` for the design D11 `users` table; verify `just migrate-run` applies it on the dev cluster and a fresh test cluster.
+- [x] 2.2 Implement `src/config.rs` (`Config::from_env`, all D10 variables, collecting every missing/invalid entry into one error); verify unit tests cover: missing `DATABASE_URL` names it, multiple bad vars all reported together.
+- [x] 2.3 Implement `src/db.rs`: pool from config, readiness check helper, and a test helper that creates+migrates `lifedb_test` on the dev cluster; verify an integration test connects to `lifedb_test` and the readiness helper returns ok.
+- [x] 2.4 Implement `src/telemetry.rs`: `EnvFilter` + fmt subscriber, pretty vs JSON by config, stdout only; verify a test with JSON format parses a synthetic span's log output and finds method/status/duration fields.
 
 ## 3. Service skeleton
 
