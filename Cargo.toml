@@ -9,6 +9,7 @@ license = "MIT"
 [dependencies]
 anyhow = "1"
 argon2 = { version = "0.6", features = ["rand_core", "getrandom"] }
+axum = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -44,6 +45,9 @@ utoipa = { version = "6", features = ["chrono", "uuid"] }
 utoipa-axum = "0.3"
 uuid = { version = "1", features = ["serde", "v7"] }
 validator = { version = "0.21", features = ["derive"] }
+
+# Only for tower-sessions' `Expiry`; the API surface itself speaks chrono.
+time = "0.3"
 
 [dev-dependencies]
 http-body-util = "0.1"

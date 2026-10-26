@@ -16,10 +16,10 @@
 
 ## 3. Service skeleton
 
-- [ ] 3.1 Implement `src/error.rs`: `AppError` (thiserror) with the D6 mappings and the `{ message, request_id }` envelope; verify unit tests assert 400/404/409/500 shapes, that 500 bodies carry no internal text, and that the logged cause and envelope request id match.
-- [ ] 3.2 Implement `src/state.rs` and `src/middleware.rs`: the D7 layer stack in exact order with config-driven timeout/body-limit/origins; verify tests assert: request-id response header present and equal to the value in log/error bodies, oversized body → 413 envelope, foreign-origin preflight → no CORS allow match.
-- [ ] 3.3 Implement health probes (`/healthz`, `/readyz`) outside the session layers; verify tests: liveness returns 200 with a deliberately broken DB endpoint while readiness returns 503.
-- [ ] 3.4 Implement `src/main.rs` boot sequence (config → telemetry → pool → `sqlx::migrate!` → serve with graceful shutdown); verify by starting the server against the dev cluster, curling `/healthz` and `/readyz` for 200, sending SIGTERM mid-request and observing completion plus exit 0.
+- [x] 3.1 Implement `src/error.rs`: `AppError` (thiserror) with the D6 mappings and the `{ message, request_id }` envelope; verify unit tests assert 400/404/409/500 shapes, that 500 bodies carry no internal text, and that the logged cause and envelope request id match.
+- [x] 3.2 Implement `src/state.rs` and `src/middleware.rs`: the D7 layer stack in exact order with config-driven timeout/body-limit/origins; verify tests assert: request-id response header present and equal to the value in log/error bodies, oversized body → 413 envelope, foreign-origin preflight → no CORS allow match.
+- [x] 3.3 Implement health probes (`/healthz`, `/readyz`) outside the session layers; verify tests: liveness returns 200 with a deliberately broken DB endpoint while readiness returns 503.
+- [x] 3.4 Implement `src/main.rs` boot sequence (config → telemetry → pool → `sqlx::migrate!` → serve with graceful shutdown); verify by starting the server against the dev cluster, curling `/healthz` and `/readyz` for 200, sending SIGTERM mid-request and observing completion plus exit 0.
 
 ## 4. Auth vertical
 
