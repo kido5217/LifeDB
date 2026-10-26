@@ -50,8 +50,10 @@ cargo fmt --check
 
 Once running, the service serves the versioned API under `/api/v1`, plus
 `/healthz` (liveness), `/readyz` (readiness, checks the database) and
-`/openapi.json` (machine-readable API description). cargo run: the service refuses to start without its required
-environment (`DATABASE_URL` arrives from the dev shell; `ALLOWED_ORIGINS`
+`/openapi.json` (machine-readable API description).
+
+`cargo run` refuses to start without its required environment:
+`DATABASE_URL` arrives from the dev shell, while `ALLOWED_ORIGINS`
 is a comma-separated browser-origin allow-list, e.g.
-`ALLOWED_ORIGINS=http://localhost:5173 cargo run`). All variables and
+`ALLOWED_ORIGINS=http://localhost:5173 cargo run`. All variables and
 defaults are documented in `Config::from_env` in `src/config.rs`.

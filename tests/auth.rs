@@ -364,7 +364,11 @@ async fn unknown_user_and_wrong_password_are_indistinguishable() {
         (unknown_time, wrong_time)
     };
     assert!(
-        slow < fast.mul_f32(10.0) || fast < Duration::from_millis(5),
+        fast > Duration::from_millis(5),
+        "measurement below hashing floor: wrong={wrong_time:?} unknown={unknown_time:?}"
+    );
+    assert!(
+        slow < fast.mul_f32(10.0),
         "timing split: wrong={wrong_time:?} unknown={unknown_time:?}"
     );
 }

@@ -109,6 +109,13 @@ impl Config {
                         "ALLOWED_ORIGINS: no usable entries (comma-separated list)".to_string(),
                     );
                 }
+                for entry in &list {
+                    if axum::http::HeaderValue::from_str(entry).is_err() {
+                        problems.push(format!(
+                            "ALLOWED_ORIGINS: not a usable origin value: {entry:?}"
+                        ));
+                    }
+                }
                 list
             }
         };
@@ -265,6 +272,21 @@ mod tests {
         pairs.extend(minimal());
         let cfg = Config::from_lookup(lookup_from(&pairs)).unwrap();
         assert!(!cfg.cookie_secure);
+    }
+
+    #[test]
+    fn malformed_origin_value_is_named_not_panicked() {
+        let err = Config::from_lookup(lookup_from(&[
+            ("DATABASE_URL", "postgres://x"),
+            ("ALLOWED_ORIGINS", "http://good.example,ht\ntp://broken"),
+        ]))
+        .unwrap_err();
+        assert!(
+            err.problems
+                .iter()
+                .any(|p| p.contains("ALLOWED_ORIGINS") && p.contains("broken")),
+            "{err}"
+        );
     }
 
     #[test]

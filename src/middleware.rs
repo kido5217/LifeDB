@@ -137,9 +137,14 @@ pub async fn envelope(req: Request, next: Next) -> Response {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        match meta.as_ref().and_then(|m| m.cause.clone()) {
+        match meta.and_then(|m| m.cause) {
             Some(cause) => {
                 error!(target: "http", rid = %rid, method = %method, path = %path, status = status.as_u16(), %cause, elapsed_ms, "request failed")
+            }
+            None if status.is_server_error() => {
+                // 5xx from a layer (e.g. session-store save failure) whose
+                // cause never reached us: log at error with what we do know.
+                error!(target: "http", rid = %rid, method = %method, path = %path, status = status.as_u16(), elapsed_ms, "request failed")
             }
             None => {
                 warn!(target: "http", rid = %rid, method = %method, path = %path, status = status.as_u16(), elapsed_ms, "request failed")
