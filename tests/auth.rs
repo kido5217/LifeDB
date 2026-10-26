@@ -131,9 +131,39 @@ async fn register_creates_account_without_a_session() {
         "register must not set a session cookie"
     );
 
-    let dupe = register(app().await, &user, "twelve chars pass!").await;
+    let dupe = register_with(
+        app().await,
+        &user,
+        "twelve chars pass!",
+        "other@example.org",
+    )
+    .await;
     assert_eq!(dupe.status, StatusCode::CONFLICT);
     assert_eq!(dupe.body.unwrap()["code"], "username_taken");
+}
+
+#[tokio::test]
+async fn register_without_email_field_is_400() {
+    // The "missing email" half of the spec scenario: absent field, not
+    // malformed value.
+    let user = common::unique_username("noemail");
+    let reply = into_reply(
+        app()
+            .await
+            .oneshot(post_json(
+                "/api/v1/auth/register",
+                &json!({"username": user, "password": "twelve chars pass!"}),
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    let details = reply.body.unwrap()["details"].as_array().unwrap().clone();
+    assert!(
+        !details.is_empty(),
+        "failure reason must be listed: {details:?}"
+    );
 }
 
 #[tokio::test]
