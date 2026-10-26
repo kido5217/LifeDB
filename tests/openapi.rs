@@ -60,12 +60,31 @@ async fn openapi_document_describes_the_whole_surface() {
                 .map(|m| m.keys().collect::<Vec<_>>())
         );
     }
-    for schema in ["Credentials", "MeResponse", "ErrorEnvelope"] {
+    for schema in [
+        "Credentials",
+        "RegisterCredentials",
+        "MeResponse",
+        "ErrorEnvelope",
+    ] {
         assert!(
             doc["components"]["schemas"][schema].is_object(),
             "schema {schema} missing"
         );
     }
+    // Login payload stays {username, password}; register and me gained email.
+    assert!(doc["components"]["schemas"]["Credentials"]["properties"]["email"].is_null());
+    assert!(
+        doc["components"]["schemas"]["RegisterCredentials"]["properties"]["email"].is_object(),
+        "register body must expose email"
+    );
+    assert!(
+        doc["components"]["schemas"]["MeResponse"]["properties"]["email"].is_object(),
+        "me response must expose email"
+    );
+    assert_eq!(
+        doc["paths"]["/api/v1/auth/register"]["post"]["responses"]["409"]["description"],
+        "username or email taken"
+    );
     assert!(
         doc["components"]["securitySchemes"]["sessionCookie"].is_object(),
         "cookie security scheme missing"

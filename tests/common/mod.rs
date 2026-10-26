@@ -44,21 +44,24 @@ pub async fn test_pool() -> PgPool {
             .run(&pool)
             .await
             .expect("migrations on lifedb_test");
-        // Each test process starts from a clean slate; unique usernames
-        // keep tests independent within the process.
-        sqlx::query("TRUNCATE users")
-            .execute(&pool)
-            .await
-            .expect("truncate users");
         pool
     })
     .await
     .clone()
 }
 
-/// A username unique per test, so parallel tests share one table safely.
+/// A username unique across processes and runs (pid + wall-clock suffix),
+/// so parallel test binaries and repeated runs never collide; rows from
+/// earlier runs are therefore harmless and need no truncation. Result is
+/// lowercase `[a-z0-9_]` and <= 32 chars with the tags used here.
 pub fn unique_username(tag: &str) -> String {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static N: AtomicU64 = AtomicU64::new(0);
-    format!("{tag}_{}", N.fetch_add(1, Ordering::Relaxed))
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock after 1970")
+        .as_nanos();
+    format!(
+        "{tag}_{}_{:x}",
+        std::process::id(),
+        nanos & 0xffff_ffff_ffff
+    )
 }

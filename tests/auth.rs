@@ -93,16 +93,20 @@ fn cookie_from(set_cookie: &str) -> String {
         .to_string()
 }
 
-async fn register(app: Router, username: &str, password: &str) -> Reply {
+async fn register_with(app: Router, username: &str, password: &str, email: &str) -> Reply {
     into_reply(
         app.oneshot(post_json(
             "/api/v1/auth/register",
-            &json!({"username": username, "password": password}),
+            &json!({"username": username, "password": password, "email": email}),
         ))
         .await
         .unwrap(),
     )
     .await
+}
+
+async fn register(app: Router, username: &str, password: &str) -> Reply {
+    register_with(app, username, password, &format!("{username}@example.com")).await
 }
 
 async fn login(app: Router, username: &str, password: &str) -> Reply {
@@ -127,9 +131,39 @@ async fn register_creates_account_without_a_session() {
         "register must not set a session cookie"
     );
 
-    let dupe = register(app().await, &user, "twelve chars pass!").await;
+    let dupe = register_with(
+        app().await,
+        &user,
+        "twelve chars pass!",
+        "other@example.org",
+    )
+    .await;
     assert_eq!(dupe.status, StatusCode::CONFLICT);
     assert_eq!(dupe.body.unwrap()["code"], "username_taken");
+}
+
+#[tokio::test]
+async fn register_without_email_field_is_400() {
+    // The "missing email" half of the spec scenario: absent field, not
+    // malformed value.
+    let user = common::unique_username("noemail");
+    let reply = into_reply(
+        app()
+            .await
+            .oneshot(post_json(
+                "/api/v1/auth/register",
+                &json!({"username": user, "password": "twelve chars pass!"}),
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    let details = reply.body.unwrap()["details"].as_array().unwrap().clone();
+    assert!(
+        !details.is_empty(),
+        "failure reason must be listed: {details:?}"
+    );
 }
 
 #[tokio::test]
@@ -442,4 +476,134 @@ async fn login_rejects_wrong_password() {
     let reply = login(app().await, &user, "a different password").await;
     assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
     assert!(reply.headers.get(header::SET_COOKIE).is_none());
+}
+
+#[tokio::test]
+async fn duplicate_email_409_in_both_arrival_orders() {
+    // Pair 1: lowercase arrives first, uppercase-only variant conflicts.
+    let u1 = common::unique_username("dupa");
+    let u2 = common::unique_username("dupb");
+    let e1 = format!("{u1}@dup.example");
+    let e1_upper = format!("{u1}@DUP.EXAMPLE");
+    assert_eq!(
+        register_with(app().await, &u1, "twelve chars pass!", &e1)
+            .await
+            .status,
+        StatusCode::CREATED
+    );
+    let dupe = register_with(app().await, &u2, "twelve chars pass!", &e1_upper).await;
+    assert_eq!(dupe.status, StatusCode::CONFLICT);
+    assert_eq!(dupe.body.unwrap()["code"], "unique_violation");
+
+    // Pair 2: reversed order, distinct address.
+    let u3 = common::unique_username("dupc");
+    let u4 = common::unique_username("dupd");
+    let e2 = format!("{u3}@dup.example");
+    let e2_upper = format!("{u3}@DUP.EXAMPLE");
+    assert_eq!(
+        register_with(app().await, &u3, "twelve chars pass!", &e2_upper)
+            .await
+            .status,
+        StatusCode::CREATED
+    );
+    let dupe = register_with(app().await, &u4, "twelve chars pass!", &e2).await;
+    assert_eq!(dupe.status, StatusCode::CONFLICT);
+
+    let pool = common::test_pool().await;
+    for email in [&e1, &e2] {
+        let rows: i64 = sqlx::query_scalar!(
+            "SELECT count(*) FROM users WHERE lower(email) = lower($1)",
+            email
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .unwrap_or(0);
+        assert_eq!(
+            rows, 1,
+            "case-folded uniqueness must keep exactly one row per address"
+        );
+    }
+}
+
+#[tokio::test]
+async fn register_rejects_malformed_email_with_rule_detail() {
+    let user = common::unique_username("bademail");
+    let reply = register_with(app().await, &user, "twelve chars pass!", "not-an-email").await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    let details = reply.body.unwrap()["details"].as_array().unwrap().clone();
+    assert!(
+        details
+            .iter()
+            .any(|d| d.as_str().is_some_and(|s| s.contains("valid email"))),
+        "{details:?}"
+    );
+}
+
+#[tokio::test]
+async fn login_with_email_gets_validation_400() {
+    let user = common::unique_username("emailogin");
+    let email = format!("{user}@example.com");
+    register_with(app().await, &user, "twelve chars pass!", &email).await;
+    // The email in the username field fails the username rule before any
+    // lookup: never a 401/200, no email column consulted.
+    let reply = login(app().await, &email, "twelve chars pass!").await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.body.unwrap()["message"], "request validation failed");
+}
+
+#[tokio::test]
+async fn me_exposes_email_and_legacy_rows_read_null() {
+    let user = common::unique_username("meemail");
+    // Mixed-case, run-unique address: proves original-case storage.
+    let email = format!("{}a@Example.com", user);
+    register_with(app().await, &user, "twelve chars pass!", &email).await;
+    let router = app().await;
+    let reply = login(router.clone(), &user, "twelve chars pass!").await;
+    let cookie = cookie_from(&set_cookie_of(&reply));
+    let me = into_reply(
+        router
+            .clone()
+            .oneshot(with_cookie(
+                Request::builder()
+                    .uri("/api/v1/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+                &cookie,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(me.status, StatusCode::OK);
+    assert_eq!(me.body.as_ref().unwrap()["email"], email);
+
+    // A row inserted without email (pre-0002 legacy shape) authenticates and
+    // reads email: null.
+    let legacy = common::unique_username("legacy");
+    let pool = common::test_pool().await;
+    sqlx::query("INSERT INTO users (id, username, password_hash) VALUES (uuidv7(), $1, $2)")
+        .bind(&legacy)
+        .bind(lifedb::auth::hash("twelve chars pass!").unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let reply = login(router.clone(), &legacy, "twelve chars pass!").await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT);
+    let cookie = cookie_from(&set_cookie_of(&reply));
+    let me = into_reply(
+        router
+            .oneshot(with_cookie(
+                Request::builder()
+                    .uri("/api/v1/auth/me")
+                    .body(Body::empty())
+                    .unwrap(),
+                &cookie,
+            ))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(me.status, StatusCode::OK);
+    assert!(me.body.as_ref().unwrap()["email"].is_null());
 }

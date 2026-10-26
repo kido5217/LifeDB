@@ -29,7 +29,12 @@ impl Modify for CookieAuth {
         description = "Browser-first REST API for LifeDB. Session-cookie auth; see /api/v1."
     ),
     paths(),
-    components(schemas(ErrorEnvelope, dto::Credentials, dto::MeResponse)),
+    components(schemas(
+        ErrorEnvelope,
+        dto::Credentials,
+        dto::RegisterCredentials,
+        dto::MeResponse
+    )),
     modifiers(&CookieAuth),
     tags((name = "auth", description = "Account registration and session lifecycle")),
 )]
