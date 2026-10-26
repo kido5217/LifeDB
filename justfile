@@ -28,6 +28,14 @@ db-console:
 db-reset *args:
     pg-reset {{args}}
 
+# Create the next SQLx migration file under migrations/ (sequentially numbered).
+migrate-create name:
+    sqlx migrate add --sequential {{name}}
+
+# Apply pending migrations from migrations/ to DATABASE_URL.
+migrate-run:
+    sqlx migrate run
+
 # Enter the Nix dev shell.
 shell:
     exec nix develop

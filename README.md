@@ -33,3 +33,22 @@ Tasks (run inside the dev shell):
 | `just db-reset` | destroy all local data and start a fresh cluster (prompts; `just db-reset --force` to skip) |
 
 From inside the dev shell: `just update` refreshes the pinned flake inputs.
+
+## API development
+
+The service lives in the root Cargo package (`lifedb`). Inside the dev shell
+(it starts the database and exports `DATABASE_URL` for you):
+
+```sh
+just migrate-run                 # apply migrations/ to the dev database
+just migrate-create <name>       # scaffold the next migration file
+cargo run                        # boot the API (also applies migrations)
+cargo test                       # unit + integration tests (uses lifedb_test)
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check
+```
+
+Once running, the service serves the versioned API under `/api/v1`, plus
+`/healthz` (liveness), `/readyz` (readiness, checks the database) and
+`/openapi.json` (machine-readable API description). Configuration is
+documented in the `Config::from_env` table in `src/config.rs`.

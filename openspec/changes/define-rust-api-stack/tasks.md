@@ -2,10 +2,10 @@
 
 ## 1. Workspace and toolchain
 
-- [ ] 1.1 Create the single Cargo package with the decided dependency set (design D1–D10 versions/features) and a stub `main.rs`; verify `cargo check` succeeds inside `nix develop`.
-- [ ] 1.2 Extend `.gitignore` for `target/`; verify `git status` stays clean after a `cargo check` run.
-- [ ] 1.3 Add nixpkgs `sqlx-cli` to the flake devShell packages and `migrate-create` / `migrate-run` recipes to the `justfile` (wrapping `sqlx migrate` against the shell's `DATABASE_URL`); verify `nix develop --command sqlx --version` prints a version and bare `just` lists the new recipes.
-- [ ] 1.4 Update `README.md` with the API development loop (enter shell, migrate, run, test commands); verify each documented command is exactly the one used in later tasks so a reader following it reproduces the run.
+- [x] 1.1 Create the single Cargo package with the decided dependency set (design D1–D10 versions/features) and a stub `main.rs`; verify `cargo check` succeeds inside `nix develop`.
+- [x] 1.2 Extend `.gitignore` for `target/`; verify `git status` stays clean after a `cargo check` run.
+- [x] 1.3 Add nixpkgs `sqlx-cli` to the flake devShell packages and `migrate-create` / `migrate-run` recipes to the `justfile` (wrapping `sqlx migrate` against the shell's `DATABASE_URL`); verify `nix develop --command sqlx --version` prints a version and bare `just` lists the new recipes.
+- [x] 1.4 Update `README.md` with the API development loop (enter shell, migrate, run, test commands); verify each documented command is exactly the one used in later tasks so a reader following it reproduces the run.
 
 ## 2. Persistence and configuration base
 

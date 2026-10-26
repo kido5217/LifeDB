@@ -115,6 +115,7 @@
           rustToolchain
           postgresql_18
           just
+          sqlx-cli
           pgStart
           pgStop
           pgStatus
